@@ -1,75 +1,57 @@
-# React + TypeScript + Vite
+# SIMULACRA
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+**SIMULACRA** is a high-performance, WebGL-powered interactive manifesto that explores the philosophy and mathematics of simulation through real-time browser physics and dynamic data visualization.
 
-Currently, two official plugins are available:
+## 🌌 Overview
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Unlike traditional websites, SIMULACRA functions as a real-time graphics and physics engine running directly in the browser. By decoupling the React HTML UI from the underlying WebGL canvas, we achieve seamless routing and complex 3D rendering without dropping frames.
 
-## React Compiler
+- **The Particle Grid:** A reactive 5,000-particle instanced mesh that responds to cursor gravity and time-dilation parameters.
+- **The Sandbox Engine:** A high-performance Plinko-board utilizing Rapier (WebAssembly) physics, computing collisions for hundreds of rigid bodies simultaneously.
+- **The Ledger:** A live data visualization sorting 4,000 3D nodes at 60 FPS to demonstrate algorithmic efficiency.
+- **The Manifesto:** A technical deep-dive into the stack and performance considerations.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## 🛠 Tech Stack
 
-## Expanding the ESLint configuration
+- **Framework:** React + TypeScript (Vite)
+- **Routing:** React Router DOM (v6)
+- **State Management:** Zustand (Transient Updates)
+- **Graphics:** Three.js + React Three Fiber (`@react-three/fiber`, `@react-three/drei`)
+- **Physics:** Rapier (`@react-three/rapier`)
+- **Animations:** GSAP (ScrollTrigger)
+- **Styling:** Tailwind CSS v4
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## 🚀 Getting Started
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+### Prerequisites
+- Node.js (v18+ recommended)
+- npm
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+### Installation
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+# Clone the repository
+git clone https://github.com/jamilharun/simulacra.git
 
+# Navigate to directory
+cd simulacra
+
+# Install dependencies
+npm install
+
+# Start the dev server
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## 📱 Performance
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+SIMULACRA utilizes `@react-three/drei`'s `<PerformanceMonitor>` to actively track frame rates. If the browser dips below 50 FPS on low-end devices, the engine automatically culls physics objects and particle counts to prevent browser crashes.
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## ☁️ Deployment (Cloudflare Pages)
 
+This project is configured as a Single Page Application (SPA). A `public/_redirects` file is included so that direct links to routes (like `/sandbox`) resolve correctly on Cloudflare's edge network.
+
+```bash
+npm run build
+npx wrangler pages deploy dist
 ```
