@@ -4,12 +4,14 @@ import { mkdir, writeFile, rm } from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import http from 'http';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const OUT = path.join(ROOT, 'recordings');
 const FRAMES_DIR = path.join(OUT, '_frames');
-const BASE_URL = 'http://localhost:5173';
+const PORT = process.env.PORT || 5173;
+let BASE_URL = `http://localhost:${PORT}`;
 const VIEWPORT = { width: 1440, height: 900 };
 const FPS = 20;
 
@@ -19,7 +21,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 let cursor = { x: VIEWPORT.width / 2, y: VIEWPORT.height / 2 };
 
-async function moveTo(page, x, y, duration = 400) {
+async function moveTo(page, x, y, duration = 280) {
   const fromX = cursor.x;
   const fromY = cursor.y;
   const steps = Math.max(Math.ceil(duration / 16), 2);
@@ -33,7 +35,7 @@ async function moveTo(page, x, y, duration = 400) {
   }
 }
 
-async function sweepPath(page, points, msPerSegment = 600) {
+async function sweepPath(page, points, msPerSegment = 420) {
   for (let i = 0; i < points.length - 1; i++) {
     await moveTo(page, points[i + 1][0], points[i + 1][1], msPerSegment);
   }
@@ -63,33 +65,49 @@ async function smoothScroll(page, deltaY, duration = 2000) {
   const steps = Math.ceil(duration / 40);
   const chunk = deltaY / steps;
   for (let i = 0; i < steps; i++) {
-    await page.mouse.wheel({ deltaY: chunk });
+    await page.evaluate((dy) => window.scrollBy(0, dy), chunk);
     await sleep(40);
   }
 }
 
 async function clickNav(page, href) {
-  await page.click(`nav a[href="${href}"]`);
+  await page.evaluate((h) => {
+    const el = document.querySelector(`a[href="${h}"]`);
+    if (el) el.click();
+  }, href);
   await sleep(2500);
 }
 
 // ── dev server ────────────────────────────────────────────────────────────────
 
-function startDevServer() {
-  return new Promise((resolve, reject) => {
-    const proc = spawn('npm', ['run', 'dev', '--', '--port', '5173'], {
-      cwd: ROOT,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, FORCE_COLOR: '0' },
-    });
-    const onData = (data) => {
-      if (data.toString().includes('5173')) resolve(proc);
-    };
-    proc.stdout.on('data', onData);
-    proc.stderr.on('data', onData);
-    proc.on('error', reject);
-    setTimeout(() => reject(new Error('Dev server timeout')), 30_000);
+function isServerUp(url) {
+  return new Promise((resolve) => {
+    http.get(url, (res) => { res.resume(); resolve(true); }).on('error', () => resolve(false));
   });
+}
+
+async function startDevServer() {
+  // if a server is already running on the configured port, skip spawning
+  if (await isServerUp(BASE_URL)) {
+    console.log(`Using existing server at ${BASE_URL}`);
+    return null;
+  }
+
+  const proc = spawn('npm', ['run', 'dev', '--', '--port', String(PORT)], {
+    cwd: ROOT,
+    stdio: 'ignore',
+    env: { ...process.env },
+  });
+  proc.on('error', (err) => { throw err; });
+
+  // poll until the server responds
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    await sleep(500);
+    if (await isServerUp(BASE_URL)) return proc;
+  }
+  proc.kill();
+  throw new Error('Dev server timeout');
 }
 
 // ── main ──────────────────────────────────────────────────────────────────────
@@ -138,23 +156,23 @@ async function main() {
     await sweepPath(page, [
       [200, 450], [500, 300], [900, 500], [1200, 300], [1100, 600],
       [700, 700], [300, 550], [600, 400],
-    ], 500);
+    ], 350);
 
     // hover HUD panel (bottom-right) and tweak sliders
     console.log('  tweaking HUD sliders...');
-    await moveTo(page, 1250, 760, 500);
+    await moveTo(page, 1250, 760, 350);
     await sleep(400);
 
     const allSliders = await page.$$('input[type="range"]');
 
     // helper: one down→drag→up stroke on a slider
-    async function stroke(el, fromPct, toPct, stepMs = 30) {
+    async function stroke(el, fromPct, toPct, stepMs = 12) {
       const box = await el.boundingBox();
       if (!box) return;
       const y = box.y + box.height / 2;
       const x0 = box.x + box.width * fromPct;
       const x1 = box.x + box.width * toPct;
-      await moveTo(page, x0, y, 300);
+      await moveTo(page, x0, y, 120);
       await page.mouse.down();
       const steps = Math.abs(Math.ceil((x1 - x0) / 4));
       for (let i = 0; i <= steps; i++) {
@@ -164,37 +182,23 @@ async function main() {
         await sleep(stepMs);
       }
       await page.mouse.up();
-      await sleep(400);
+      await sleep(160);
     }
 
-    // HUD: Gravity → right then back left
-    if (allSliders[0]) {
-      await stroke(allSliders[0], 0.25, 0.85);
-      await stroke(allSliders[0], 0.85, 0.4);
-    }
-    // HUD: Time-Dilation → right then back
-    if (allSliders[1]) {
-      await stroke(allSliders[1], 0.3, 0.9);
-      await stroke(allSliders[1], 0.9, 0.35);
-    }
-    // HUD: Chaos Coefficient → sweep right
-    if (allSliders[2]) {
-      await stroke(allSliders[2], 0.1, 0.95);
-      await stroke(allSliders[2], 0.95, 0.5);
-    }
+    if (allSliders[0]) await stroke(allSliders[0], 0.25, 0.85);
+    if (allSliders[1]) await stroke(allSliders[1], 0.3, 0.9);
+    if (allSliders[2]) await stroke(allSliders[2], 0.1, 0.95);
 
     // second mouse sweep after tweaking
     await sweepPath(page, [
       [600, 400], [300, 200], [800, 150], [1100, 400],
       [900, 600], [500, 700], [700, 450],
-    ], 450);
+    ], 315);
 
-    // scroll down slowly
+    // scroll down to the very bottom
     console.log('  scrolling...');
-    await smoothScroll(page, 1200, 3000);
+    await smoothScroll(page, 5000, 2100);
     await sleep(800);
-    await smoothScroll(page, -1200, 2000);
-    await sleep(600);
 
     // ── scene 2: sandbox ──────────────────────────────────────────────────
     console.log('Scene 2: Sandbox');
@@ -205,7 +209,7 @@ async function main() {
     await sweepPath(page, [
       [900, 400], [1200, 250], [1100, 550], [850, 650],
       [1300, 400], [1000, 300], [1150, 600],
-    ], 500);
+    ], 350);
 
     // tweak sandbox sliders (left panel is always visible on desktop)
     console.log('  tweaking Sandbox sliders...');
@@ -219,7 +223,7 @@ async function main() {
     // watch the physics for a moment
     await sweepPath(page, [
       [1000, 300], [1200, 500], [900, 600], [1100, 350],
-    ], 600);
+    ], 420);
     await sleep(1500);
 
     // ── scene 3: theory ───────────────────────────────────────────────────
@@ -229,9 +233,9 @@ async function main() {
 
     await sweepPath(page, [
       [400, 300], [800, 200], [1100, 400], [700, 500],
-    ], 500);
+    ], 350);
 
-    await smoothScroll(page, 600, 2000);
+    await smoothScroll(page, 600, 1400);
     await sleep(800);
 
     // click Execute Sorting Sequence button
@@ -246,7 +250,7 @@ async function main() {
       await sleep(1000);
     }
 
-    await smoothScroll(page, 400, 1500);
+    await smoothScroll(page, 400, 1050);
     await sleep(600);
 
     // ── scene 4: about ────────────────────────────────────────────────────
@@ -256,36 +260,12 @@ async function main() {
 
     await sweepPath(page, [
       [500, 350], [900, 300], [700, 500],
-    ], 500);
+    ], 350);
 
-    await smoothScroll(page, 500, 2000);
+    await smoothScroll(page, 500, 1400);
     await sleep(600);
-    await smoothScroll(page, -500, 1500);
+    await smoothScroll(page, -500, 1050);
     await sleep(500);
-
-    // ── scene 5: back to home, click Enter Sandbox ─────────────────────
-    console.log('Scene 5: Home → Enter Sandbox');
-    await clickNav(page, '/');
-    await sleep(1500);
-
-    await sweepPath(page, [
-      [700, 400], [1000, 300], [1300, 200],
-    ], 500);
-
-    // hover then click "Enter Sandbox →" button (top-right corner)
-    const enterBtn = await page.$('a[href="/sandbox"].absolute');
-    if (enterBtn) {
-      await enterBtn.hover();
-      await sleep(600);
-      await enterBtn.click();
-      await sleep(2000);
-    }
-
-    // final mouse drift
-    await sweepPath(page, [
-      [900, 300], [1200, 500], [800, 600], [600, 350],
-    ], 500);
-    await sleep(1000);
 
     // ── stop screencast ────────────────────────────────────────────────────
     await client.send('Page.stopScreencast');
@@ -312,7 +292,7 @@ async function main() {
     console.log(`\nDone! Video saved to: ${outFile}`);
   } finally {
     await browser.close();
-    server.kill();
+    if (server) server.kill();
   }
 }
 
